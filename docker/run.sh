@@ -28,12 +28,12 @@ if [ -z "$OPENAI_API_KEY" ]; then
   docker run --publish 8888:${BIND_PORT} \
     --name lmss-suggestion-api \
     --env-file .docker.env \
-    lmss-suggestion-api:latest
+    273ventures/lmss-suggestion-api:latest
 else
   # run with env vars
   docker run --publish 8888:${BIND_PORT} \
     --name lmss-suggestion-api \
     -e OPENAI_API_KEY=${OPENAI_API_KEY} \
     -e OPENAI_MODEL_NAME=${OPENAI_MODEL_NAME} \
-    lmss-suggestion-api:latest
+    273ventures/lmss-suggestion-api:latest
 fi
