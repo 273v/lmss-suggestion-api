@@ -41,17 +41,22 @@ RUN apt-get update -y --fix-missing \
        apt-get dist-upgrade -y \
        && \
        apt-get install -y --no-install-recommends \
-         apt-transport-https \
+            apt-transport-https \
+            build-essential \
             ca-certificates \
             curl \
-            build-essential \
-            python3-pip \
-            python3-virtualenv \
             python3 \
             python3-pip \
             python3-virtualenv \
+            python3-wheel \
             python3-dev \
-            libxml2-dev
+            libxml2-dev \
+      && \
+      python3 -m pip install --upgrade pip \
+      && \
+      python3 -m pip install --upgrade setuptools \
+      && \
+      python3 -m pip install --upgrade wheel
 
 # cleanup  for smallest footprint
 RUN apt-get autoremove -y \
