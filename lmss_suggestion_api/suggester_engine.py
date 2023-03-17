@@ -370,6 +370,7 @@ class SuggesterEngine:
                     {
                         "iri": concept_data["iri"],
                         "label": concept_data["label"],
+                        "match": concept_data["label"],
                         "alt_labels": concept_data["alt_labels"],
                         "hidden_labels": concept_data["hidden_labels"],
                         "definitions": concept_data["definitions"],
@@ -377,7 +378,7 @@ class SuggesterEngine:
                         "children": concept_data["children"],
                         "exact": concept_data["exact"],
                         "substring": concept_data["substring"],
-                        "starts_with": concept_data["starts_with"],
+                        "startswith": concept_data["starts_with"],
                         "score": llm_score,
                         "distance": 1.0 - llm_score,
                     }
@@ -388,7 +389,7 @@ class SuggesterEngine:
             results,
             key=lambda x: (
                 -x["exact"],
-                -x["starts_with"],
+                -x["startswith"],
                 -x["substring"],
                 x["distance"],
             ),
@@ -407,14 +408,14 @@ class SuggesterEngine:
         dist4 = 1.0 - rapidfuzz.fuzz.partial_token_sort_ratio(string1, string2) / 100.0
         return (dist0 + dist1 + dist2 + dist3 + dist4) / 5.0
 
-    # pylint: disable=R0912
+    # pylint: disable=R0912,R0915
     async def suggest(
         self,
         query: str,
         suggestion_type: SuggestionType,
         concept_depth: int = 8,
         max_results: int = 5,
-        include_parents: bool = False,
+        include_parents: bool = True,
         disable_llm: bool = False,
     ) -> list[dict]:
         """Suggest concepts for the given query.
@@ -459,6 +460,7 @@ class SuggesterEngine:
                         parent_result = {
                             "iri": parent_concept["iri"],
                             "label": parent_concept["label"],
+                            "pref_labels": parent_concept["pref_labels"],
                             "alt_labels": parent_concept["alt_labels"],
                             "hidden_labels": parent_concept["hidden_labels"],
                             "definitions": parent_concept["definitions"],
@@ -467,7 +469,7 @@ class SuggesterEngine:
                             "source": "label_parent",
                             "exact": result["exact"],
                             "substring": result["substring"],
-                            "starts_with": result["starts_with"],
+                            "startswith": result["starts_with"],
                             "distance": result["distance"],
                             "score": 1.0 - result["distance"],
                         }
@@ -496,6 +498,7 @@ class SuggesterEngine:
                         parent_result = {
                             "iri": parent_concept["iri"],
                             "label": parent_concept["label"],
+                            "pref_labels": parent_concept["pref_labels"],
                             "alt_labels": parent_concept["alt_labels"],
                             "hidden_labels": parent_concept["hidden_labels"],
                             "definitions": parent_concept["definitions"],
@@ -504,7 +507,7 @@ class SuggesterEngine:
                             "source": "definition_parent",
                             "exact": result["exact"],
                             "substring": result["substring"],
-                            "starts_with": result["starts_with"],
+                            "startswith": result["starts_with"],
                             "distance": result["distance"],
                             "score": 1.0 - result["distance"],
                         }
@@ -512,6 +515,8 @@ class SuggesterEngine:
 
         # standardize fields
         for result in results:
+            if result["label"] is None:
+                continue
             result["distance"] = self.distance_ensemble(
                 query.lower(), result["label"].lower()
             )
@@ -519,36 +524,34 @@ class SuggesterEngine:
             # exact can be for label, alt label, or hidden label
             result["exact"] = (
                 query.lower() == result["label"].lower()
-                or
-                # check all alt labels
-                any(
+                or any(
+                    query.lower() == pref_label.lower()
+                    for pref_label in result["pref_labels"]
+                )
+                or any(
                     query.lower() == alt_label.lower()
                     for alt_label in result["alt_labels"]
                 )
-                or
-                # check all hidden labels
-                any(
+                or any(
                     query.lower() == hidden_label.lower()
                     for hidden_label in result["hidden_labels"]
                 )
             )
             result["substring"] = (
                 (query.lower() in result["label"].lower())
-                or
-                # check all alt labels
-                any(
+                or any(
+                    query.lower() in pref_label.lower()
+                    for pref_label in result["pref_labels"]
+                )
+                or any(
                     query.lower() in alt_label.lower()
                     for alt_label in result["alt_labels"]
                 )
-                or
-                # check all hidden labels
-                any(
+                or any(
                     query.lower() in hidden_label.lower()
                     for hidden_label in result["hidden_labels"]
                 )
-                or
-                # check all definitions
-                any(
+                or any(
                     query.lower() in definition.lower()
                     for definition in result["definitions"]
                 )
@@ -558,7 +561,7 @@ class SuggesterEngine:
 
         # get unique results and sort by score key descending
         results = sorted(
-            results,
+            [result for result in results if result["label"] is not None],
             key=lambda x: (
                 -x["exact"],
                 -x["startswith"],
@@ -582,13 +585,24 @@ class SuggesterEngine:
                 if self.llm_distance_threshold <= min_distance:
                     # search the llm if the result quality is too low
                     if len(results) == 0 or min_distance > self.max_distance:
-                        results = await self.search_llm(
+                        results += await self.search_llm(
                             query=query,
                             suggestion_type=suggestion_type,
                             num_results=max_results,
                         )
                         for result in results:
                             result["source"] = "llm"
+
+        # only keep the best result for each iri
+        iri_min: dict[str, dict] = {}
+        for result in results:
+            # check that this is the best result for the iri
+            if result["iri"] in iri_min:
+                if result["distance"] > iri_min[result["iri"]]["distance"]:
+                    continue
+            iri_min[result["iri"]] = result
+
+        results = list(iri_min.values())
 
         # standardize fields
         for result in results:
@@ -597,8 +611,6 @@ class SuggesterEngine:
                     query.lower(), result["label"].lower()
                 )
                 result["score"] = 1.0 - result["distance"]
-            result["startswith"] = result["label"].lower().startswith(query.lower())
-            result["match"] = result["label"]
 
         # get unique results and sort by score key descending
         results = sorted(
