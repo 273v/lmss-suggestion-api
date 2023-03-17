@@ -366,19 +366,53 @@ class SuggesterEngine:
                 # get the concept
                 concept_data = self.lmss.concepts[concept]
 
+                # get exact value
+                exact_value = (
+                        query.lower() == concept_data["label"].lower()
+                        or
+                        any(query.lower() == label.lower() for label in concept_data["pref_labels"])
+                        or
+                        any(query.lower() == label.lower() for label in concept_data["alt_labels"])
+                        or
+                        any(query.lower() == label.lower() for label in concept_data["hidden_labels"])
+                )
+
+                # get startswith value
+                startswith_value = (
+                        concept_data["label"].lower().startswith(query.lower())
+                        or
+                        any(label.lower().startswith(query.lower()) for label in concept_data["pref_labels"])
+                        or
+                        any(label.lower().startswith(query.lower()) for label in concept_data["alt_labels"])
+                        or
+                        any(label.lower().startswith(query.lower()) for label in concept_data["hidden_labels"])
+                )
+
+                # get substring value
+                substring_value = (
+                        query.lower() in concept_data["label"].lower()
+                        or
+                        any(query.lower() in label.lower() for label in concept_data["pref_labels"])
+                        or
+                        any(query.lower() in label.lower() for label in concept_data["alt_labels"])
+                        or
+                        any(query.lower() in label.lower() for label in concept_data["hidden_labels"])
+                )
+
                 results.append(
                     {
                         "iri": concept_data["iri"],
                         "label": concept_data["label"],
                         "match": concept_data["label"],
+                        "pref_labels": concept_data["pref_labels"],
                         "alt_labels": concept_data["alt_labels"],
                         "hidden_labels": concept_data["hidden_labels"],
                         "definitions": concept_data["definitions"],
                         "parents": concept_data["parents"],
                         "children": concept_data["children"],
-                        "exact": concept_data["exact"],
-                        "substring": concept_data["substring"],
-                        "startswith": concept_data["starts_with"],
+                        "exact": exact_value,
+                        "startswith": concept_data["label"].lower().startswith(query.lower()),
+                        "substring": substring_value,
                         "score": llm_score,
                         "distance": 1.0 - llm_score,
                     }
