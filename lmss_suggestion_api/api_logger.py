@@ -14,6 +14,7 @@ from lmss_suggestion_api.api_settings import ENV
 LOG_FORMAT_STRING = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 log_formatter = logging.Formatter(LOG_FORMAT_STRING)
 
+
 # setup logger
 def get_logger(name: str = __name__) -> logging.Logger:
     """
