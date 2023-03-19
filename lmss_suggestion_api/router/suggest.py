@@ -9,7 +9,12 @@ import time
 # package imports
 from fastapi import APIRouter, Request
 
-from lmss_suggestion_api.schema.suggest import SuggestResponse, Suggestion
+from lmss_suggestion_api.schema.suggest import (
+    SuggestResponse,
+    Suggestion,
+    ConceptSuggestionResponse,
+    ConceptSuggestion,
+)
 from lmss_suggestion_api.suggester_engine import SuggestionType
 from lmss_suggestion_api.api_logger import LOGGER
 from lmss_suggestion_api.api_settings import VERSION_001
@@ -65,6 +70,50 @@ async def suggest_concept_results(
         # output stack trace
         LOGGER.exception(error)
         return SuggestResponse(
+            suggestions=[],
+            response_time=time.time() - start_time,
+            error="Unable to generate suggestions",
+        )
+
+
+@router["default"].get("/concepts", response_model=ConceptSuggestionResponse)
+@router[VERSION_001].get("/concepts", response_model=ConceptSuggestionResponse)
+async def method_suggest_concepts(
+    request: Request, text: str
+) -> ConceptSuggestionResponse:
+    """Run the suggestion engine meta-query to determine which concepts to query"""
+    # get the status
+    request.app.state.request_stats["suggest/concepts"] += 1
+    cache_key = f"concepts/{text}"
+
+    # get timer
+    start_time = time.time()
+
+    # check the cache
+    if cache_key in request.app.state.suggest_cache:
+        return ConceptSuggestionResponse(
+            suggestions=[
+                ConceptSuggestion(**s)
+                for s in request.app.state.suggest_cache[cache_key]
+            ],
+            response_time=time.time() - start_time,
+        )
+
+    # run the suggestion engine
+    try:
+        concepts = await request.app.state.suggester_engine.suggest_concepts(query=text)
+        print(concepts)
+
+        request.app.state.suggest_cache[cache_key] = concepts
+        return ConceptSuggestionResponse(
+            suggestions=[ConceptSuggestion(**c) for c in concepts],
+            response_time=time.time() - start_time,
+        )
+    except Exception as error:  # pylint: disable=W0718
+        LOGGER.error("Unable to generate suggestions: %s", error)
+        # output stack trace
+        LOGGER.exception(error)
+        return ConceptSuggestionResponse(
             suggestions=[],
             response_time=time.time() - start_time,
             error="Unable to generate suggestions",
@@ -332,4 +381,16 @@ async def method_suggest_status(
     # get the status
     return await suggest_concept_results(
         request, SuggestionType.STATUS, text, num_results
+    )
+
+
+@router["default"].get("/system-identifiers", response_model=SuggestResponse)
+@router[VERSION_001].get("/system-identifiers", response_model=SuggestResponse)
+async def method_suggest_system_identifiers(
+    request: Request, text: str, num_results: int = 10
+) -> SuggestResponse:
+    """Run the suggestion engine on the input text"""
+    # get the status
+    return await suggest_concept_results(
+        request, SuggestionType.SYSTEM_IDENTIFIERS, text, num_results
     )

@@ -56,15 +56,43 @@ class SuggestionType(Enum):
     SYSTEM_IDENTIFIERS = "System Identifiers"
 
 
+# mapping from concept name/label to router endpoint
+CONCEPT_TO_ENDPOINT = {
+    "Actor / Player": "/suggest/actor-player",
+    "Area of Law": "/suggest/area-of-law",
+    "Asset Type": "/suggest/asset-type",
+    "Communication Modality": "/suggest/communication-modality",
+    "Currency": "/suggest/currency",
+    "Data Format": "/suggest/data-format",
+    "Document / Artifact": "/suggest/document-artifact",
+    "Engagement Terms": "/suggest/engagement-terms",
+    "Event": "/suggest/event",
+    "Forums and Venues": "/suggest/forum-and-venue",
+    "Governmental Body": "/suggest/governmental-body",
+    "Industry": "/suggest/industry",
+    "LMSS Type": "/suggest/lmss-type",
+    "Legal Authorities": "/suggest/legal-authorities",
+    "Legal Entity": "/suggest/legal-entity",
+    "Location": "/suggest/location",
+    "Matter Narrative": "/suggest/matter-narrative",
+    "Matter Narrative Format": "/suggest/matter-narrative-format",
+    "Objectives": "/suggest/objective",
+    "Service": "/suggest/service",
+    "Standards Compatibility": "/suggest/standards-compatibility",
+    "Status": "/suggest/status",
+    "System Identifiers": "/suggest/system-identifiers",
+}
+
+
 # pylint: disable=R0902,R0913
 class SuggesterEngine:
     """SuggesterEngine class provides an implementation of the multi-stage suggestion engine
     used to serve the SALI suggester API.  The suggester engine attempts to assign one or more
     labels to the input text based on the following:
       - [ ] Exact matchings of the input text to the labels in the ontology
-      - [ ] Fuzzy matching via LSHF of the input text to the labels in the ontology
-      - [ ] Word embeddings similarity of the input text to the labels in the ontology
-      - [ ] LLM (e.g., OpenAI GPT-3) based suggestions
+      - [ ] Fuzzy matching via LSH(F) of the input text to the labels in the ontology
+      - [ ] Word/sentence embeddings similarity of the input text to the labels in the ontology
+      - [ ] LLM (e.g., GPT, T5, KLLM) based suggestions
     """
 
     def __init__(
@@ -117,6 +145,166 @@ class SuggesterEngine:
                 f"Error loading tokenizer: {ex}; setting default tokenizer"
             )
             self.tokenizer = tiktoken.encoding_for_model("text-davinci-003")
+
+    def get_llm_meta_prompt_text(
+        self,
+        concept_list: list[SuggestionType] | None = None,
+    ) -> str:
+        """Get a query designed to be used as a meta prompt for the LLM, which asks the LLM
+        to suggest top level/key concepts based on the input query.
+
+        Args:
+            concept_list (list[SuggestionType], optional): List of concepts to include in the prompt. Defaults to None.
+
+        Returns:
+            str: The meta prompt text.
+        """
+
+        # get the concept list
+        if concept_list is None:
+            # include all suggestion types
+            concept_list = list(SuggestionType)
+
+        # get the list of concept labels
+        prompt = "<CONCEPT TYPES>\n"
+        for concept in concept_list:
+            concept_data = self.lmss.concepts[self.lmss.key_concepts[concept.value]]
+            if len(concept_data["definitions"]) > 0:
+                definition = concept_data["definitions"][0]
+                prompt += f" - {concept.value}: {definition}\n"
+            else:
+                prompt += f" - {concept.value}\n"
+
+        return prompt
+
+        # pylint: disable=W0718
+
+    async def get_llm_meta_response(
+        self,
+        query: str,
+        model: str = ENV["OPENAI_MODEL_NAME"],
+        max_retry: int = 1,
+    ) -> dict:
+        """Get a response from the LLM regarding the meta-query for concept types to
+        use for the LLM.
+
+        Args:
+            query (str): Query to use for the LLM.
+            model (str): Model to use for the LLM.
+            max_retry (int): Maximum number of retries to make if the API fails.
+
+        Returns:
+            dict: Response from the LLM API.
+        """
+
+        response_data = None
+        retry_count = 0
+
+        while response_data is None and retry_count < max_retry:
+            if retry_count == max_retry:
+                raise RuntimeError("Too many retries.")
+
+            contextual_prompt = """<PROMPT>You are an experienced paralegal working in the back office of a 
+law firm or corporate legal department.  You review user input and provide suggestions for the best way to organize
+information using the LMSS ontology.  
+
+Perform the following steps to complete the task:
+
+1. Review the list of top level concepts provided in CONCEPT TYPES section above.  
+
+2. Review the user input provided in INPUT section.
+
+3. Select zero or more concepts from the list that best describe the user input.  
+
+4. Rank the selected concepts in order of relevance to the user input.
+
+5. Return the ordered labels as a JSON array of label,score pairs like [["label", 0.877], ...]
+
+6. Only respond in JSON.  Do not include any other text in your response."""
+
+            try:
+                # switch on model types
+                if "turbo" in model.lower():
+                    system_prompt = self.get_llm_meta_prompt_text()
+                    system_prompt += contextual_prompt
+
+                    messages = [
+                        {
+                            "role": "system",
+                            "content": system_prompt,
+                        },
+                        {"role": "user", "content": f"""<INPUT>{query}"""},
+                    ]
+
+                    # calculate token length
+                    token_count = sum(
+                        len(self.tokenizer.encode(m["content"])) for m in messages
+                    )
+
+                    response = await openai.ChatCompletion.acreate(
+                        model=model,
+                        max_tokens=4000 - token_count,
+                        temperature=0.0,
+                        messages=messages,
+                    )
+
+                    # get the last choices/[]/message/content response
+                    if len(response["choices"]) > 0:
+                        try:
+                            response_data = json.loads(
+                                response["choices"][-1]["message"]["content"]
+                            )
+                            return response_data
+                        except Exception as error:
+                            self.logger.error(
+                                "Error parsing response from OpenAI ChatCompletion API: %s",
+                                error,
+                            )
+                            retry_count += 1
+                            continue
+
+                    response_data = None
+                else:
+                    prompt = self.get_llm_meta_prompt_text()
+                    prompt += contextual_prompt + "\n"
+                    prompt += f"""<INPUT>{query}"""
+
+                    # calculate token length
+                    token_count = len(self.tokenizer.encode(prompt))
+
+                    response = await openai.Completion.acreate(
+                        model=model,
+                        prompt=prompt,
+                        max_tokens=4000 - token_count,
+                        temperature=0.0,
+                    )
+                    # set response if present
+                    if len(response["choices"]) > 0:
+                        try:
+                            response_data = json.loads(response["choices"][0]["text"])
+                            return response_data
+                        except Exception as error:
+                            self.logger.error(
+                                "Error parsing response from OpenAI Completion API: %s",
+                                error,
+                            )
+                            retry_count += 1
+                            continue
+                    else:
+                        response_data = None
+            except Exception as error:
+                # log
+                self.logger.error(
+                    "Error getting response from OpenAI API: %s",
+                    error,
+                )
+                retry_count += 1
+                continue
+
+        # return
+        if not response_data:
+            return {}
+        return response_data
 
     def get_llm_prompt_text(
         self,
@@ -368,35 +556,53 @@ class SuggesterEngine:
 
                 # get exact value
                 exact_value = (
-                        query.lower() == concept_data["label"].lower()
-                        or
-                        any(query.lower() == label.lower() for label in concept_data["pref_labels"])
-                        or
-                        any(query.lower() == label.lower() for label in concept_data["alt_labels"])
-                        or
-                        any(query.lower() == label.lower() for label in concept_data["hidden_labels"])
+                    query.lower() == concept_data["label"].lower()
+                    or any(
+                        query.lower() == label.lower()
+                        for label in concept_data["pref_labels"]
+                    )
+                    or any(
+                        query.lower() == label.lower()
+                        for label in concept_data["alt_labels"]
+                    )
+                    or any(
+                        query.lower() == label.lower()
+                        for label in concept_data["hidden_labels"]
+                    )
                 )
 
                 # get startswith value
                 startswith_value = (
-                        concept_data["label"].lower().startswith(query.lower())
-                        or
-                        any(label.lower().startswith(query.lower()) for label in concept_data["pref_labels"])
-                        or
-                        any(label.lower().startswith(query.lower()) for label in concept_data["alt_labels"])
-                        or
-                        any(label.lower().startswith(query.lower()) for label in concept_data["hidden_labels"])
+                    concept_data["label"].lower().startswith(query.lower())
+                    or any(
+                        label.lower().startswith(query.lower())
+                        for label in concept_data["pref_labels"]
+                    )
+                    or any(
+                        label.lower().startswith(query.lower())
+                        for label in concept_data["alt_labels"]
+                    )
+                    or any(
+                        label.lower().startswith(query.lower())
+                        for label in concept_data["hidden_labels"]
+                    )
                 )
 
                 # get substring value
                 substring_value = (
-                        query.lower() in concept_data["label"].lower()
-                        or
-                        any(query.lower() in label.lower() for label in concept_data["pref_labels"])
-                        or
-                        any(query.lower() in label.lower() for label in concept_data["alt_labels"])
-                        or
-                        any(query.lower() in label.lower() for label in concept_data["hidden_labels"])
+                    query.lower() in concept_data["label"].lower()
+                    or any(
+                        query.lower() in label.lower()
+                        for label in concept_data["pref_labels"]
+                    )
+                    or any(
+                        query.lower() in label.lower()
+                        for label in concept_data["alt_labels"]
+                    )
+                    or any(
+                        query.lower() in label.lower()
+                        for label in concept_data["hidden_labels"]
+                    )
                 )
 
                 results.append(
@@ -411,7 +617,7 @@ class SuggesterEngine:
                         "parents": concept_data["parents"],
                         "children": concept_data["children"],
                         "exact": exact_value,
-                        "startswith": concept_data["label"].lower().startswith(query.lower()),
+                        "startswith": startswith_value,
                         "substring": substring_value,
                         "score": llm_score,
                         "distance": 1.0 - llm_score,
@@ -441,6 +647,42 @@ class SuggesterEngine:
         dist3 = 1.0 - rapidfuzz.fuzz.token_set_ratio(string1, string2) / 100.0
         dist4 = 1.0 - rapidfuzz.fuzz.partial_token_sort_ratio(string1, string2) / 100.0
         return (dist0 + dist1 + dist2 + dist3 + dist4) / 5.0
+
+    async def suggest_concepts(
+        self,
+        query: str,
+    ) -> list[dict]:
+        """Suggest a list of concepts to use in the suggestion engine using get_llm_meta_response(query=text)
+
+        Args:
+            query (str): Query to suggest concepts for.
+
+        Returns:
+            list[dict]: List of suggested concepts with the iri, label, and target endpoint.
+        """
+        # get the list of concepts
+        concepts = await self.get_llm_meta_response(query)
+
+        # match the labels to the key concepts
+        results = []
+
+        # iterate over the concepts
+        for concept, score in concepts:
+            if concept in self.lmss.key_concepts:
+                concept_iri = self.lmss.key_concepts[concept]
+                concept_data = self.lmss.concepts[concept_iri]
+
+                results.append(
+                    {
+                        "iri": concept_data["iri"],
+                        "label": concept_data["label"],
+                        "score": score,
+                        "url": CONCEPT_TO_ENDPOINT.get(concept, None),
+                    }
+                )
+
+        # sort by score descending
+        return sorted(results, key=lambda x: -x["score"])
 
     # pylint: disable=R0912,R0915
     async def suggest(

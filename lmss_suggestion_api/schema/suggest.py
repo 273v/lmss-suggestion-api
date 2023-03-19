@@ -9,6 +9,27 @@
 from pydantic import BaseModel
 
 
+class ConceptSuggestion(BaseModel):
+    """
+    Concept suggestions
+    """
+
+    iri: str
+    label: str
+    score: float
+    url: str | None
+
+
+class ConceptSuggestionResponse(BaseModel):
+    """
+    Concept suggestions response
+    """
+
+    suggestions: list[ConceptSuggestion]
+    response_time: float = 0.0
+    error: str | None = None
+
+
 class Suggestion(BaseModel):
     """
     Suggestion request
