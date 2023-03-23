@@ -17,6 +17,13 @@ try:
             ENV = json.load(f)
     else:
         ENV = {}
+
+    # ensure that DEBUG is set to boolean
+    if "DEBUG" in ENV:
+        if ENV["DEBUG"] in [1, "1", "t", "T", "true", "True", "TRUE", "y", "Y", "yes", "Yes", "YES"]:
+            ENV["DEBUG"] = True
+        else:
+            ENV["DEBUG"] = False
 except Exception as error:
     # pylint: disable=W0707
     raise RuntimeError(f"Failed to load .env.json: {error}", error)
