@@ -691,7 +691,10 @@ You are a legal professional working in the back office of a law firm or corpora
         for suggestion_type in list(SuggestionType):
             # search labels
             label_results = self.lmss.search_labels(query, suggestion_type.value, 1)
-            if len(label_results) > 0 and label_results[0]["distance"] < self.max_distance:
+            if (
+                len(label_results) > 0
+                and label_results[0]["distance"] < self.max_distance
+            ):
                 for label_result in label_results:
                     results.append(
                         {
