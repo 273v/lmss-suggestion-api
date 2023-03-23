@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 # Base LTS image.
-FROM ubuntu:22.04
+FROM ubuntu:23.04
 
 # NOTE: You may need to set a proxy for apt and pip to work in your environment.
 # RUN echo 'Acquire::http { Proxy "host.docker.internal"; };' >> /etc/apt/apt.conf.d/01proxy
@@ -50,13 +50,8 @@ RUN apt-get update -y --fix-missing \
             python3-virtualenv \
             python3-wheel \
             python3-dev \
-            libxml2-dev \
-      && \
-      python3 -m pip install --upgrade pip \
-      && \
-      python3 -m pip install --upgrade setuptools \
-      && \
-      python3 -m pip install --upgrade wheel
+            libxml2-dev
+
 
 # cleanup  for smallest footprint
 RUN apt-get autoremove -y \
