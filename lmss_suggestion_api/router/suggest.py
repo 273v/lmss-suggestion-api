@@ -49,7 +49,11 @@ async def suggest_concept_results(
 
     # check the cache
     if cache_key in request.app.state.suggest_cache:
-        LOGGER.info("cache hit: key=%s, value=%s", cache_key, request.app.state.suggest_cache[cache_key])
+        LOGGER.info(
+            "cache hit: key=%s, value=%s",
+            cache_key,
+            request.app.state.suggest_cache[cache_key],
+        )
         return SuggestResponse(
             suggestions=[
                 Suggestion(**s) for s in request.app.state.suggest_cache[cache_key]
@@ -95,7 +99,11 @@ async def method_suggest_concepts(
 
     # check the cache
     if cache_key in request.app.state.suggest_cache:
-        LOGGER.info("cache hit: key=%s, value=%s", cache_key, request.app.state.suggest_cache[cache_key])
+        LOGGER.info(
+            "cache hit: key=%s, value=%s",
+            cache_key,
+            request.app.state.suggest_cache[cache_key],
+        )
         return ConceptSuggestionResponse(
             suggestions=[
                 ConceptSuggestion(**s)
