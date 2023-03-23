@@ -16,8 +16,10 @@ from lmss_suggestion_api.schema.suggest import (
     ConceptSuggestion,
 )
 from lmss_suggestion_api.suggester_engine import SuggestionType
-from lmss_suggestion_api.api_logger import LOGGER
+from lmss_suggestion_api.api_logger import get_logger
 from lmss_suggestion_api.api_settings import VERSION_001
+
+LOGGER = get_logger(__name__)
 
 # implement health check API endpoint with a version
 router = {
@@ -47,6 +49,7 @@ async def suggest_concept_results(
 
     # check the cache
     if cache_key in request.app.state.suggest_cache:
+        LOGGER.info("cache hit: key=%s, value=%s", cache_key, request.app.state.suggest_cache[cache_key])
         return SuggestResponse(
             suggestions=[
                 Suggestion(**s) for s in request.app.state.suggest_cache[cache_key]
@@ -59,6 +62,7 @@ async def suggest_concept_results(
         suggestions = await request.app.state.suggester_engine.suggest(
             text, concept_type, max_results=num_results
         )
+        LOGGER.info("cache miss: key=%s, value=%s", cache_key, suggestions)
 
         request.app.state.suggest_cache[cache_key] = suggestions
         return SuggestResponse(
@@ -91,6 +95,7 @@ async def method_suggest_concepts(
 
     # check the cache
     if cache_key in request.app.state.suggest_cache:
+        LOGGER.info("cache hit: key=%s, value=%s", cache_key, request.app.state.suggest_cache[cache_key])
         return ConceptSuggestionResponse(
             suggestions=[
                 ConceptSuggestion(**s)
@@ -102,7 +107,7 @@ async def method_suggest_concepts(
     # run the suggestion engine
     try:
         concepts = await request.app.state.suggester_engine.suggest_concepts(query=text)
-        print(concepts)
+        LOGGER.info("cache miss: key=%s, value=%s", cache_key, concepts)
 
         request.app.state.suggest_cache[cache_key] = concepts
         return ConceptSuggestionResponse(
