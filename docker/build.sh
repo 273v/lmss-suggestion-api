@@ -13,9 +13,9 @@ else
 fi
 
 # build with a hard-coded name since we're not using compose/swarm/k8s or registry here
-docker build -t 273ventures/lmss-suggestion-api:0.1.0 -f docker/Dockerfile .
+docker build -t 273ventures/lmss-suggestion-api:0.1.1 -f docker/Dockerfile .
 
 # add tags
-docker tag 273ventures/lmss-suggestion-api:0.1.0 273ventures/lmss-suggestion-api:latest
+docker tag 273ventures/lmss-suggestion-api:0.1.1 273ventures/lmss-suggestion-api:latest
 
 
