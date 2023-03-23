@@ -114,7 +114,11 @@ class SuggesterEngine:
             enable_label_search (bool, optional): Enable label search. Defaults to True.
             enable_definition_search (bool, optional): Enable definition search. Defaults to True.
             enable_llm_search (bool, optional): Enable LLM search. Defaults to True.
-            llm_score_threshold (float, optional): LLM score threshold. Defaults to 0.1.
+            llm_distance_threshold (float, optional): LLM distance threshold. Defaults to 0.2.
+            max_llm_concept_tokens (int, optional): Maximum number of tokens to use for LLM
+                suggestions. Defaults to 2048.
+            include_hidden_labels (bool, optional): Include hidden labels in suggestions. Defaults to True.
+            include_alt_labels (bool, optional): Include alternative labels in suggestions. Defaults to True.
             max_distance (int, optional): Maximum edit distance to consider for fuzzy matching. Defaults to 50.
             max_results (int, optional): Maximum number of results to return. Defaults to 10.
         """
@@ -257,8 +261,9 @@ Perform the following steps to complete the task:
                             return response_data
                         except Exception as error:
                             self.logger.error(
-                                "Error parsing response from OpenAI ChatCompletion API: %s",
+                                "Error parsing response from OpenAI ChatCompletion API: %s \ndata=%s",
                                 error,
+                                response,
                             )
                             retry_count += 1
                             continue
@@ -285,8 +290,9 @@ Perform the following steps to complete the task:
                             return response_data
                         except Exception as error:
                             self.logger.error(
-                                "Error parsing response from OpenAI Completion API: %s",
+                                "Error parsing response from OpenAI Completion API: %s \ndata=%s",
                                 error,
+                                response,
                             )
                             retry_count += 1
                             continue
@@ -351,6 +357,7 @@ Perform the following steps to complete the task:
 3. Assign zero or more labels from the LABELS list to the TEXT.
 4. Rank order the labels in the order of relevance to the TEXT.
 5. Return the ordered labels as a JSON array of label,score pairs like [["label", 0.877], ...]
+6. Only respond in JSON.  Do not include any other text in your response.
 <OUTPUT>"""
 
         # return
@@ -394,18 +401,20 @@ Perform the following steps to complete the task:
                 max_length=max_length,
             )
 
-        prompt = f"""<LABELS>
-{concept_label_list}
+        prompt = f"""<ROLE>
+You are a legal professional working in the back office of a law firm or corporate legal department.
+</ROLE>
 
-<TEXT>
-{query}
+<LABELS>
+{concept_label_list}
+</LABELS>
 
 <PROMPT>Follow these instructions:
-1. Read the {suggestion_type.value} LABELS above.
-2. Read the TEXT above.
-3. Assign zero or more labels from the LABELS list to the TEXT.
-4. Rank order the labels in the order of relevance to the TEXT.
-5. Return the ordered labels as a JSON array of label,score pairs like [["label", 0.877], ...]"""
+1. Assign zero or more of the LABELS above to the user input.
+2. Rank order the labels in order of relevance to the user input.
+3. Return the ordered labels as a JSON array of label,score pairs like [["label", 0.877], ...]
+4. Respond only in JSON.  If you do not understand the user input, return an empty JSON array.
+</PROMPT>"""
 
         # return
         return prompt
@@ -443,16 +452,15 @@ Perform the following steps to complete the task:
                     messages = [
                         {
                             "role": "system",
-                            "content": "You are a legal professional working in the back office of a law "
-                            + "firm or corporate legal department.",
-                        },
-                        {
-                            "role": "user",
                             "content": self.get_llm_prompt_chat(
                                 query=query,
                                 suggestion_type=suggestion_type,
                                 max_length=self.max_llm_concept_tokens,
                             ),
+                        },
+                        {
+                            "role": "user",
+                            "content": f"<TEXT>{query}</TEXT>",
                         },
                     ]
 
@@ -477,8 +485,9 @@ Perform the following steps to complete the task:
                             return response_data
                         except Exception as error:
                             self.logger.error(
-                                "Error parsing response from OpenAI ChatCompletion API: %s",
+                                "Error parsing response from OpenAI ChatCompletion API: %s\ndata=%s",
                                 error,
+                                response,
                             )
                             retry_count += 1
                             continue
@@ -507,8 +516,9 @@ Perform the following steps to complete the task:
                             return response_data
                         except Exception as error:
                             self.logger.error(
-                                "Error parsing response from OpenAI Completion API: %s",
+                                "Error parsing response from OpenAI Completion API: %s \ndata=%s",
                                 error,
+                                response,
                             )
                             retry_count += 1
                             continue
@@ -547,8 +557,21 @@ Perform the following steps to complete the task:
         # get the prompt
         response_data = await self.get_llm_response(query, suggestion_type)
 
+        # get concept labels as a list
+        concept_labels = [
+            self.lmss.concepts[iri]["label"]
+            for iri in self.lmss.get_children(
+                self.lmss.key_concepts[suggestion_type.value]
+            )
+            if self.lmss.concepts[iri]["label"] not in [None, ""]
+        ]
+
         # iterate over the suggestions
         for suggestion, llm_score in response_data:
+            # check if the suggestion is in the concepts
+            if suggestion not in concept_labels:
+                continue
+
             # check if the suggestion is in the concepts
             for concept in self.lmss.label_to_iri.get(suggestion, []):
                 # get the concept
@@ -660,11 +683,27 @@ Perform the following steps to complete the task:
         Returns:
             list[dict]: List of suggested concepts with the iri, label, and target endpoint.
         """
-        # get the list of concepts
-        concepts = await self.get_llm_meta_response(query)
 
         # match the labels to the key concepts
         results = []
+
+        # iterate through labels for direct match inclusion
+        for suggestion_type in list(SuggestionType):
+            # search labels
+            label_results = self.lmss.search_labels(query, suggestion_type.value, 1)
+            if len(label_results) > 0 and label_results[0]["distance"] < self.max_distance:
+                for label_result in label_results:
+                    results.append(
+                        {
+                            "iri": label_result["iri"],
+                            "label": label_result["label"],
+                            "score": 1.0,
+                            "url": CONCEPT_TO_ENDPOINT.get(label_result["label"], None),
+                        }
+                    )
+
+        # get the list of concepts
+        concepts = await self.get_llm_meta_response(query)
 
         # iterate over the concepts
         for concept, score in concepts:
