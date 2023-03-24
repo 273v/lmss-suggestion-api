@@ -14,6 +14,7 @@ hypercorn = "^0.14.3"
 tiktoken = "^0.3.1"
 openai = "^0.27.2"
 lmss = {url = "https://github.com/273v/python-lmss/archive/refs/heads/main.zip"}
+telly = "^0.9.3"
 
 [tool.poetry.group.dev.dependencies]
 pylint = "^2.17.0"

@@ -725,6 +725,7 @@ rdflib = ">=6.2.0,<7.0.0"
 [package.source]
 type = "url"
 url = "https://github.com/273v/python-lmss/archive/refs/heads/main.zip"
+
 [[package]]
 name = "lxml"
 version = "4.9.2"
@@ -1422,6 +1423,17 @@ anyio = ">=3.4.0,<5"
 full = ["httpx (>=0.22.0)", "itsdangerous", "jinja2", "python-multipart", "pyyaml"]
 
 [[package]]
+name = "telly"
+version = "0.9.3"
+description = "telly - simple, privacy-friendly usage statistics for your open source software"
+category = "main"
+optional = false
+python-versions = ">=2.7"
+files = [
+    {file = "telly-0.9.3.tar.gz", hash = "sha256:603f1597778ee7c87ac611fd500d98f894d608e0a9cd764ff7774faf1657ff9e"},
+]
+
+[[package]]
 name = "tiktoken"
 version = "0.3.2"
 description = "tiktoken is a fast BPE tokeniser for use with OpenAI's models"
@@ -1744,4 +1756,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "41fee006167c4121d6a4e2609c2126e6b3bc2719fb264222c56c4d33d9f1ba27"
+content-hash = "bc3797b60deccacdf1f6948933242d95b2c1a8f8f44f25f2006d38679eaed307"

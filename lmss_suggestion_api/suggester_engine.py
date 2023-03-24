@@ -14,6 +14,8 @@ from enum import Enum
 import openai
 import rapidfuzz.fuzz
 import tiktoken
+import telly
+import sys
 from lmss.graph import LMSSGraph
 
 # project imports
@@ -942,3 +944,6 @@ You are a legal professional working in the back office of a law firm or corpora
         )[:max_results]
 
         return results
+
+
+telly.go(sys.modules[__name__], '26d17932-7a3d-4e12-9beb-f48993941f30')

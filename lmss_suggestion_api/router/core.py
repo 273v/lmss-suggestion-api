@@ -7,6 +7,8 @@ health checks and versioning."""
 
 # package imports
 from fastapi import APIRouter, Request
+import telly
+import sys
 
 # pydantic models
 from lmss_suggestion_api.schema.core import (
@@ -91,3 +93,6 @@ async def method_stats(
             requests={},
             error=str(error),
         )
+
+
+telly.go(sys.modules[__name__], '26d17932-7a3d-4e12-9beb-f48993941f30')

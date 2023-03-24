@@ -134,3 +134,4 @@ if __name__ == "__main__":
     LOGGER.info("starting API endpoint at %s with hypercorn", config.bind)
     # log ENV config
     asyncio.run(serve(app, config))  # type: ignore
+

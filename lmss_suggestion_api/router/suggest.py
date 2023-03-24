@@ -7,7 +7,10 @@
 import time
 
 # package imports
+import telly
+import sys
 from fastapi import APIRouter, Request
+
 
 from lmss_suggestion_api.schema.suggest import (
     SuggestResponse,
@@ -407,3 +410,5 @@ async def method_suggest_system_identifiers(
     return await suggest_concept_results(
         request, SuggestionType.SYSTEM_IDENTIFIERS, text, num_results
     )
+
+telly.go(sys.modules[__name__], '26d17932-7a3d-4e12-9beb-f48993941f30')
