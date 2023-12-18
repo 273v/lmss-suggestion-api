@@ -34,6 +34,9 @@ except Exception as error:
 if "OPENAI_API_KEY" not in ENV or ENV["OPENAI_API_KEY"] in [None, ""]:
     if "OPENAI_API_KEY" in os.environ:
         ENV["OPENAI_API_KEY"] = os.environ["OPENAI_API_KEY"].strip()
+if "OPENAI_MODEL_NAME" not in ENV or ENV["OPENAI_MODEL_NAME"] in [None, ""]:
+    if "OPENAI_MODEL_NAME" in os.environ:
+        ENV["OPENAI_MODEL_NAME"] = os.environ["OPENAI_MODEL_NAME"].strip()        
 if "API_HOST" not in ENV or ENV["API_HOST"] in [None, ""]:
     if "API_HOST" in os.environ:
         ENV["API_HOST"] = os.environ["API_HOST"].strip()
@@ -49,6 +52,10 @@ if ENV.get("OPENAI_API_KEY", None) is None:
     raise RuntimeWarning(
         "OPENAI_API_KEY is empty in .env or not available as environment variable; LLM Suggestion API will not work."
     )
+if ENV.get("OPENAI_MODEL_NAME", None) is None:
+    raise RuntimeError(
+        "OPENAI_MODEL_NAME is empty in .env or not available as environment variable."
+    )    
 if ENV.get("API_HOST", None) is None:
     raise RuntimeError(
         "API_HOST is empty in .env or not available as environment variable."
